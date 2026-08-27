@@ -1,56 +1,59 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
-import { Upload, X, FileText, ArrowRight, GraduationCap } from "lucide-react";
+import { Upload, X, FileText, ArrowRight, GraduationCap, Loader2, AlertCircle } from "lucide-react";
+import { API, apiFetch, apiUpload, SessionCreateResponse, FileUploadResponse } from "@/lib/api";
+import { saveSession, clearSession } from "@/lib/session";
 
 interface UploadedFile {
   name: string;
   size: string;
   pages: number;
-  file: File;
 }
+
+type UploadState = "idle" | "uploading" | "done" | "error";
 
 function UploadCard({
   label,
   accent,
   file,
+  state,
+  error,
   onUpload,
   onRemove,
 }: {
   label: string;
   accent: boolean;
   file: UploadedFile | null;
+  state: UploadState;
+  error: string | null;
   onUpload: (f: File) => void;
   onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  const handleFile = (f: File) => {
-    onUpload(f);
-  };
-
   return (
     <div
-      onClick={() => !file && inputRef.current?.click()}
+      onClick={() => !file && state === "idle" && inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault(); setDragging(false);
         const f = e.dataTransfer.files[0];
-        if (f) handleFile(f);
+        if (f) onUpload(f);
       }}
       style={{
         flex: 1, minHeight: 140,
-        border: `2px dashed ${dragging ? "#E85D26" : "#D1D5DB"}`,
+        border: `2px dashed ${error ? "#EF4444" : dragging ? "#E85D26" : state === "done" ? "#22C55E" : "#D1D5DB"}`,
         borderRadius: 16,
         backgroundColor: file ? "#FFFFFF" : "#FAFAFA",
         display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center",
-        cursor: file ? "default" : "pointer",
+        cursor: (file || state === "uploading") ? "default" : "pointer",
         padding: 24, position: "relative",
         transition: "border-color 0.2s",
         boxShadow: file ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
@@ -61,11 +64,19 @@ function UploadCard({
         type="file"
         accept=".pdf,.jpg,.jpeg,.png"
         style={{ display: "none" }}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); }}
       />
-      {file ? (
+
+      {state === "uploading" && (
         <>
-          {/* Remove button */}
+          <Loader2 size={28} color="#E85D26" style={{ marginBottom: 8, animation: "spin 1s linear infinite" }} />
+          <div style={{ fontSize: 13, color: "#6B7280" }}>Uploading…</div>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </>
+      )}
+
+      {state !== "uploading" && file && (
+        <>
           <button
             onClick={(e) => { e.stopPropagation(); onRemove(); }}
             style={{
@@ -78,28 +89,36 @@ function UploadCard({
           >
             <X size={14} />
           </button>
-          {/* PDF preview */}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{
               width: 44, height: 54, backgroundColor: "#EF4444", borderRadius: 6,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "white", fontWeight: 800, fontSize: 11, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>
               <FileText size={20} color="white" />
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: "#1A1A1A", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
-              <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>{file.size} • {file.pages} Pages</div>
+              <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>{file.size} • {file.pages} page{file.pages !== 1 ? "s" : ""}</div>
             </div>
           </div>
         </>
-      ) : (
+      )}
+
+      {state !== "uploading" && !file && !error && (
         <>
           <Upload size={24} color="#9CA3AF" style={{ marginBottom: 8 }} />
           <div style={{ fontSize: 14, fontWeight: 600, color: "#1A1A1A" }}>
             Upload <span style={{ color: accent ? "#E85D26" : "#1A1A1A" }}>{label}</span>
           </div>
-          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>Max 10MB</div>
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>PDF / JPG / PNG · Max 10MB</div>
+        </>
+      )}
+
+      {state !== "uploading" && !file && error && (
+        <>
+          <AlertCircle size={24} color="#EF4444" style={{ marginBottom: 8 }} />
+          <div style={{ fontSize: 13, color: "#EF4444", textAlign: "center", maxWidth: 200 }}>{error}</div>
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6, cursor: "pointer" }} onClick={() => inputRef.current?.click()}>Try again</div>
         </>
       )}
     </div>
@@ -108,17 +127,69 @@ function UploadCard({
 
 export default function UploadPage() {
   const router = useRouter();
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
   const [questionFile, setQuestionFile] = useState<UploadedFile | null>(null);
+  const [questionState, setQuestionState] = useState<UploadState>("idle");
+  const [questionError, setQuestionError] = useState<string | null>(null);
+
   const [answerFile, setAnswerFile] = useState<UploadedFile | null>(null);
+  const [answerState, setAnswerState] = useState<UploadState>("idle");
+  const [answerError, setAnswerError] = useState<string | null>(null);
 
-  const formatFile = (f: File): UploadedFile => ({
-    name: f.name,
-    size: `${(f.size / (1024 * 1024)).toFixed(1)}MB`,
-    pages: Math.ceil(Math.random() * 6) + 1, // placeholder until real parsing
-    file: f,
-  });
+  // Create a session on mount
+  useEffect(() => {
+    clearSession();
+    apiFetch<SessionCreateResponse>(API.upload.session, { method: "POST" })
+      .then((res) => {
+        setSessionId(res.session_id);
+        saveSession(res.session_id);
+      })
+      .catch((err) => setSessionError(err.message));
+  }, []);
 
-  const bothUploaded = questionFile && answerFile;
+  const handleUpload = useCallback(async (file: File, type: "question" | "answer") => {
+    if (!sessionId) return;
+
+    const setFile = type === "question" ? setQuestionFile : setAnswerFile;
+    const setState = type === "question" ? setQuestionState : setAnswerState;
+    const setError = type === "question" ? setQuestionError : setAnswerError;
+    const url = type === "question"
+      ? `${API.upload.questionPaper}?session_id=${sessionId}`
+      : `${API.upload.answerSheet}?session_id=${sessionId}`;
+
+    setState("uploading");
+    setError(null);
+    try {
+      const res = await apiUpload<FileUploadResponse>(url, file);
+      setFile({
+        name: res.filename,
+        size: `${(res.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`,
+        pages: res.page_count,
+      });
+      setState("done");
+    } catch (err: unknown) {
+      setState("error");
+      setError(err instanceof Error ? err.message : "Upload failed");
+    }
+  }, [sessionId]);
+
+  const handleRemove = (type: "question" | "answer") => {
+    if (type === "question") {
+      setQuestionFile(null);
+      setQuestionState("idle");
+      setQuestionError(null);
+    } else {
+      setAnswerFile(null);
+      setAnswerState("idle");
+      setAnswerError(null);
+    }
+  };
+
+  const bothUploaded = questionState === "done" && answerState === "done";
+  const isUploading = questionState === "uploading" || answerState === "uploading";
 
   const handleStartMapping = () => {
     if (bothUploaded) router.push("/extract");
@@ -134,14 +205,21 @@ export default function UploadPage() {
           alignItems: "center", justifyContent: "center",
           padding: "40px 60px",
         }}>
-          {/* Heading */}
+
+          {/* Session error banner */}
+          {sessionError && (
+            <div style={{
+              backgroundColor: "#FEE2E2", border: "1px solid #FCA5A5",
+              borderRadius: 10, padding: "12px 20px", marginBottom: 24,
+              color: "#DC2626", fontSize: 14, display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <AlertCircle size={16} /> Backend unavailable: {sessionError}
+            </div>
+          )}
+
           <h1 style={{ fontSize: 38, fontWeight: 800, textAlign: "center", margin: 0, lineHeight: 1.2 }}>
             Upload{" "}
-            <span style={{
-              color: "#E85D26",
-              backgroundColor: "#FDE8DF",
-              borderRadius: 12, padding: "2px 12px",
-            }}>
+            <span style={{ color: "#E85D26", backgroundColor: "#FDE8DF", borderRadius: 12, padding: "2px 12px" }}>
               Question Paper &amp; Answer Sheets
             </span>
           </h1>
@@ -149,7 +227,7 @@ export default function UploadPage() {
             Upload both files to get started
           </p>
 
-          {/* Teacher avatar illustration */}
+          {/* Teacher avatar */}
           <div style={{ position: "relative", width: 100, height: 100, marginBottom: 36 }}>
             <div style={{
               width: 100, height: 100, borderRadius: "50%",
@@ -159,14 +237,11 @@ export default function UploadPage() {
             }}>
               <GraduationCap size={48} color="#E85D26" />
             </div>
-            {/* Decorative dots */}
             {([{t:0,l:8,r:undefined,b:undefined},{t:20,r:-8,l:undefined,b:undefined},{b:5,l:2,t:undefined,r:undefined},{b:15,r:4,t:undefined,l:undefined}] as {t?:number;l?:number;r?:number;b?:number}[]).map((pos,i)=>(
               <div key={i} style={{
                 position:"absolute", width: i%2===0?10:7, height: i%2===0?10:7,
                 borderRadius:"50%", backgroundColor:"#E85D26",
-                top: pos.t, left: pos.l,
-                right: pos.r, bottom: pos.b,
-                opacity: 0.85,
+                top: pos.t, left: pos.l, right: pos.r, bottom: pos.b, opacity: 0.85,
               }}/>
             ))}
           </div>
@@ -181,22 +256,26 @@ export default function UploadPage() {
               label="Question Paper"
               accent={true}
               file={questionFile}
-              onUpload={(f) => setQuestionFile(formatFile(f))}
-              onRemove={() => setQuestionFile(null)}
+              state={questionState}
+              error={questionError}
+              onUpload={(f) => handleUpload(f, "question")}
+              onRemove={() => handleRemove("question")}
             />
             <UploadCard
               label="Answer Sheet"
               accent={false}
               file={answerFile}
-              onUpload={(f) => setAnswerFile(formatFile(f))}
-              onRemove={() => setAnswerFile(null)}
+              state={answerState}
+              error={answerError}
+              onUpload={(f) => handleUpload(f, "answer")}
+              onRemove={() => handleRemove("answer")}
             />
           </div>
 
           {/* CTA */}
           <button
             onClick={handleStartMapping}
-            disabled={!bothUploaded}
+            disabled={!bothUploaded || isUploading}
             style={{
               marginTop: 28,
               display: "flex", alignItems: "center", gap: 8,
@@ -207,10 +286,10 @@ export default function UploadPage() {
               transition: "background-color 0.2s",
             }}
           >
-            Start Mapping <ArrowRight size={18} />
+            {isUploading ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</> : <>Start Mapping <ArrowRight size={18} /></>}
           </button>
           <p style={{ fontSize: 13, color: "#9CA3AF", marginTop: 12 }}>
-            Once both files are uploaded, you&apos;ll able to map answers with questions
+            {sessionId ? `Session: ${sessionId.slice(0, 8)}…` : "Initializing session…"}
           </p>
         </main>
       </div>
