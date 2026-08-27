@@ -160,12 +160,12 @@ export default function UploadPage() {
               <GraduationCap size={48} color="#E85D26" />
             </div>
             {/* Decorative dots */}
-            {[{t:0,l:8},{t:20,r:-8},{b:5,l:2},{b:15,r:4}].map((pos,i)=>(
+            {([{t:0,l:8,r:undefined,b:undefined},{t:20,r:-8,l:undefined,b:undefined},{b:5,l:2,t:undefined,r:undefined},{b:15,r:4,t:undefined,l:undefined}] as {t?:number;l?:number;r?:number;b?:number}[]).map((pos,i)=>(
               <div key={i} style={{
                 position:"absolute", width: i%2===0?10:7, height: i%2===0?10:7,
                 borderRadius:"50%", backgroundColor:"#E85D26",
-                top: (pos as Record<string, number>).t, left: (pos as Record<string, number>).l,
-                right: (pos as Record<string, number>).r, bottom: (pos as Record<string, number>).b,
+                top: pos.t, left: pos.l,
+                right: pos.r, bottom: pos.b,
                 opacity: 0.85,
               }}/>
             ))}
