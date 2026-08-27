@@ -1,4 +1,6 @@
 """Custom exception classes for structured error handling."""
+from __future__ import annotations
+
 from fastapi import HTTPException, status
 
 
