@@ -31,14 +31,21 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # --- CORS ---
-    cors_origins: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Stored as a plain string so pydantic-settings doesn't try to JSON-decode it.
+    # Use the `cors_origins_list` property to get the parsed list.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Parse comma-separated or JSON-array CORS origins string."""
+        v = self.cors_origins.strip()
+        if v.startswith("["):
+            import json
+            try:
+                return json.loads(v)
+            except Exception:
+                pass
+        return [origin.strip() for origin in v.split(",") if origin.strip()]
 
     # --- File Handling ---
     session_storage_path: Path = Path("./sessions")
