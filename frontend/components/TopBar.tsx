@@ -43,7 +43,9 @@ const NOTIFICATIONS = [
 export default function TopBar({ backLabel = "Exams", backHref }: TopBarProps) {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const helpRef = useRef<HTMLDivElement>(null);
 
   const handleBack = () => {
     if (backHref) {
@@ -53,11 +55,14 @@ export default function TopBar({ backLabel = "Exams", backHref }: TopBarProps) {
     }
   };
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
+      }
+      if (helpRef.current && !helpRef.current.contains(event.target as Node)) {
+        setShowHelp(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -87,9 +92,58 @@ export default function TopBar({ backLabel = "Exams", backHref }: TopBarProps) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <button style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center" }} title="Help">
-          <HelpCircle size={20} />
-        </button>
+        {/* Help / User Manual Dropdown */}
+        <div style={{ position: "relative", display: "flex", alignItems: "center" }} ref={helpRef}>
+          <button
+            onClick={() => setShowHelp(!showHelp)}
+            style={{
+              background: showHelp ? "#F3F4F6" : "none",
+              border: "none", cursor: "pointer", color: "#6B7280",
+              display: "flex", alignItems: "center",
+              padding: 6, borderRadius: "50%", transition: "background-color 0.15s"
+            }}
+            title="Help & User Manual"
+          >
+            <HelpCircle size={20} />
+          </button>
+
+          {showHelp && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 12px)", right: 0,
+              width: 320, backgroundColor: "#FFFFFF",
+              border: "1px solid #E5E5E5", borderRadius: 12,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+              display: "flex", flexDirection: "column",
+              overflow: "hidden", animation: "slideDown 0.15s ease-out",
+              zIndex: 9999,
+            }}>
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #F3F4F6", backgroundColor: "#FAFAFA" }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: "#1A1A1A" }}>User Manual</span>
+              </div>
+              <div style={{ padding: "8px 0" }}>
+                {[
+                  { title: "How to upload answer sheets", desc: "Supported formats and file sizes." },
+                  { title: "Understanding auto-mapping", desc: "How AI matches answers to questions." },
+                  { title: "Reviewing grades", desc: "Adjusting scores and leaving feedback." },
+                  { title: "Exporting results", desc: "Download options for report cards." },
+                ].map((item, i) => (
+                  <div key={i} style={{
+                    padding: "12px 20px", cursor: "pointer", transition: "background-color 0.15s"
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#F9FAFB")}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "#1A1A1A" }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>{item.desc}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: "12px", textAlign: "center", borderTop: "1px solid #E5E5E5", backgroundColor: "#F9FAFB" }}>
+                <span style={{ fontSize: 13, color: "#E85D26", fontWeight: 600, cursor: "pointer" }}>View full documentation</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Notifications Dropdown */}
         <div style={{ position: "relative", display: "flex", alignItems: "center" }} ref={dropdownRef}>
