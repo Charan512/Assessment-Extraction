@@ -121,6 +121,7 @@ export default function TopBar({ backLabel = "Exams", backHref }: TopBarProps) {
               boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
               display: "flex", flexDirection: "column",
               overflow: "hidden", animation: "slideDown 0.15s ease-out",
+              zIndex: 9999,
             }}>
               {/* Dropdown Header */}
               <div style={{
