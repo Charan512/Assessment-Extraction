@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # --- Groq AI ---
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
-    groq_model: str = "llama3-70b-8192"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # --- Tesseract ---
     tesseract_path: str = ""  # empty = auto-detect
