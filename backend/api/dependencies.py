@@ -1,6 +1,3 @@
-from typing import Generator
-from fastapi import Request
-
 from storage.session_storage import SessionStorage
 from services.file_service import FileService
 from services.ocr_service import OCRService

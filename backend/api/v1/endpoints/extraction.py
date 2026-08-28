@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from api.dependencies import get_session_storage, get_extraction_service
@@ -27,10 +28,16 @@ async def extract_questions(
             "extraction_progress": 10,
         })
 
-        # ExtractionService returns (list, elapsed_seconds)
-        page_paths = sorted(session.file_paths.question_paper_pages_dir.glob("page_*.png"),
-                            key=lambda p: int(p.stem.split("_")[1]))
-        questions, elapsed = extraction_service.extract_questions(page_paths)
+        page_paths = sorted(
+            session.file_paths.question_paper_pages_dir.glob("page_*.png"),
+            key=lambda p: int(p.stem.split("_")[1]),
+        )
+
+        # High fix #9: run sync OCR in a thread executor — never block the event loop
+        loop = asyncio.get_event_loop()
+        questions, elapsed = await loop.run_in_executor(
+            None, extraction_service.extract_questions, page_paths
+        )
 
         await session_storage.update_session(session_id, {
             "questions": questions,
@@ -68,9 +75,16 @@ async def extract_answers(
             "extraction_progress": 55,
         })
 
-        page_paths = sorted(session.file_paths.answer_sheet_pages_dir.glob("page_*.png"),
-                            key=lambda p: int(p.stem.split("_")[1]))
-        answers, elapsed = extraction_service.extract_answers(page_paths)
+        page_paths = sorted(
+            session.file_paths.answer_sheet_pages_dir.glob("page_*.png"),
+            key=lambda p: int(p.stem.split("_")[1]),
+        )
+
+        # High fix #9: run sync OCR in a thread executor
+        loop = asyncio.get_event_loop()
+        answers, elapsed = await loop.run_in_executor(
+            None, extraction_service.extract_answers, page_paths
+        )
 
         await session_storage.update_session(session_id, {
             "answers": answers,

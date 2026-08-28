@@ -4,8 +4,8 @@ import re
 # ---------------------------------------------------------------------------
 # Question Number Patterns
 # ---------------------------------------------------------------------------
-# Matches: Q1, Q2, q1, q2
-QUESTION_PREFIX_PATTERN = re.compile(r"\b[Qq](\d+)\b")
+# Matches: Q1, Q2, q1, q2 — at the start of a string/line (with optional trailing punct)
+QUESTION_PREFIX_PATTERN = re.compile(r"^[Qq]\.?\s*(\d+)[.\s):]?\s*")
 
 # Matches: 1., 2., 10. (number followed by period)
 NUMBERED_DOT_PATTERN = re.compile(r"^\s*(\d{1,2})\.\s+")

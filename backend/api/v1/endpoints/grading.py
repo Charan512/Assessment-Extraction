@@ -1,11 +1,39 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from api.dependencies import get_session_storage, get_grading_service
 from storage.session_storage import SessionStorage
 from services.grading_service import GradingEvaluator
 from models.schemas import GradingSummaryResponse, GradingResultResponse
+from models.domain import GradingResult, Question, Answer
 
 router = APIRouter()
+
+
+def _build_grading_result_response(
+    r: GradingResult,
+    question_map: Dict[str, Question],
+    answer_map: Dict[str, Answer],
+) -> GradingResultResponse:
+    """
+    Critical fix #4: build GradingResultResponse from domain object fields
+    explicitly — avoids enum-vs-string mismatch from to_dict() spreading.
+    """
+    q = question_map.get(r.question_id)
+    a = answer_map.get(r.answer_id) if r.answer_id else None
+    return GradingResultResponse(
+        question_id=r.question_id,
+        answer_id=r.answer_id,
+        question_number=q.question_number if q else "",
+        question_text=q.text if q else "",
+        answer_text=a.text if a else None,
+        is_answered=r.is_answered,
+        marks_awarded=r.marks_awarded,
+        marks_total=r.marks_total,
+        percentage=r.percentage,
+        evaluation=r.evaluation,         # pass the Enum, not the string
+        feedback=r.feedback,
+        confidence=r.confidence,
+    )
 
 
 @router.post("/evaluate", response_model=GradingSummaryResponse)
@@ -29,14 +57,16 @@ async def evaluate_all(
             session.answers,
             rubric,
         )
-
         await session_storage.update_session(session_id, {"grading_results": results})
 
         summary = grading_service.calculate_summary(results)
 
+        question_map = {q.id: q for q in session.questions}
+        answer_map   = {a.id: a for a in session.answers}
+
         return GradingSummaryResponse(
             session_id=session_id,
-            results=[GradingResultResponse(**r.to_dict(), question_number="", question_text="", answer_text=None) for r in results],
+            results=[_build_grading_result_response(r, question_map, answer_map) for r in results],
             total_marks_awarded=summary["total_marks_awarded"],
             total_marks_possible=summary["total_marks_possible"],
             percentage=summary["percentage"],
@@ -73,21 +103,18 @@ async def evaluate_question(
         answer = next((a for a in session.answers if a.id == mapped_answer_id), None) if mapped_answer_id else None
 
         marks_total = question.marks if question.marks is not None else 10.0
-
         result = await grading_service.evaluate_answer(question, answer, marks_total, rubric)
 
+        # Update stored grading results
         existing_idx = next((i for i, r in enumerate(session.grading_results) if r.question_id == question_id), -1)
         if existing_idx >= 0:
             session.grading_results[existing_idx] = result
         else:
             session.grading_results.append(result)
 
-        return GradingResultResponse(
-            **result.to_dict(),
-            question_number=question.question_number,
-            question_text=question.text,
-            answer_text=answer.text if answer else None,
-        )
+        question_map = {q.id: q for q in session.questions}
+        answer_map   = {a.id: a for a in session.answers}
+        return _build_grading_result_response(result, question_map, answer_map)
     except HTTPException:
         raise
     except Exception as e:

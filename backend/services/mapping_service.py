@@ -13,6 +13,7 @@ import re
 import time
 from typing import Optional
 
+from config import get_settings
 from models.domain import Answer, AnswerMapping, Question
 from models.enums import MappingMethod
 
@@ -24,6 +25,7 @@ class MappingService:
 
     def __init__(self, groq_client=None) -> None:
         self._groq = groq_client  # injected; optional
+        self._groq_model = get_settings().groq_model
 
     # ------------------------------------------------------------------
     # Main orchestration
@@ -156,7 +158,7 @@ class MappingService:
         mappings: list[AnswerMapping] = []
         try:
             response = self._groq.chat.completions.create(
-                model="llama3-70b-8192",
+                model=self._groq_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=300,

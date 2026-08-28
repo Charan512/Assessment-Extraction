@@ -344,6 +344,11 @@ class OCRService:
                                height=float(lh), page_number=page_number)
             crop = crop_bounding_box(image, x, y, lw, lh, padding=3)
 
+            # Critical fix #5: initialize before conditional blocks so they're
+            # always defined even when trocr_ok is False.
+            text: str = ""
+            conf: float = 0.0
+
             if trocr_ok:
                 try:
                     text, conf = _run_trocr_on_crop(crop)
@@ -353,7 +358,6 @@ class OCRService:
                             confidence=conf, source="trocr",
                         ))
                         continue
-                    # Low confidence — try Tesseract on this crop
                     logger.debug(
                         "TrOCR low confidence (%.2f) on line, trying Tesseract", conf
                     )
@@ -370,16 +374,14 @@ class OCRService:
                         line.bounding_box.y += y
                         line.bounding_box.page_number = page_number
                         result.append_line(line)
-                elif not text.strip():
-                    pass  # skip empty
-                else:
-                    # Use low-confidence TrOCR anyway
-                    if "text" in dir():
-                        result.append_line(TextLine(
-                            text=text, bounding_box=bbox,
-                            confidence=conf if "conf" in dir() else 0.3,
-                            source="trocr_low_conf",
-                        ))
+                elif text.strip():
+                    # Use low-confidence TrOCR text as last resort
+                    result.append_line(TextLine(
+                        text=text, bounding_box=bbox,
+                        confidence=conf,
+                        source="trocr_low_conf",
+                    ))
+                # else: skip — both TrOCR and Tesseract returned nothing
             except Exception as exc:
                 logger.warning("Tesseract crop fallback failed: %s", exc)
 

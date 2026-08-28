@@ -20,20 +20,17 @@ async def match_answers(
         if not session.questions or not session.answers:
             raise HTTPException(status_code=400, detail="Must extract both questions and answers before mapping.")
 
-        mappings = mapping_service.match_answers_to_questions(session.questions, session.answers)
-
-        mapped_q_ids = {m.question_id for m in mappings}
-        mapped_a_ids = {m.answer_id for m in mappings}
-
-        unanswered_questions = [q for q in session.questions if q.id not in mapped_q_ids]
-        extra_answers = [a for a in session.answers if a.id not in mapped_a_ids]
+        # Critical fix #3: unpack the 3-tuple returned by match_answers_to_questions
+        mappings, unanswered_q_ids, extra_answer_ids = mapping_service.match_answers_to_questions(
+            session.questions, session.answers
+        )
 
         await session_storage.update_session(session_id, {"mappings": mappings})
 
         return {
             "mappings": [MappingResponse(**m.to_dict()) for m in mappings],
-            "unanswered_questions": [q.to_dict() for q in unanswered_questions],
-            "extra_answers": [a.to_dict() for a in extra_answers],
+            "unanswered_questions": [q.to_dict() for q in session.questions if q.id in set(unanswered_q_ids)],
+            "extra_answers": [a.to_dict() for a in session.answers if a.id in set(extra_answer_ids)],
         }
     except HTTPException:
         raise

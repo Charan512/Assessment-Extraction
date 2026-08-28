@@ -25,7 +25,7 @@ async def session_cleanup_task():
             # Sleep for the cleanup interval
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
             logger.info("Running session cleanup...")
-            session_storage.cleanup_expired_sessions()
+            await session_storage.cleanup_expired_sessions()
         except asyncio.CancelledError:
             logger.info("Session cleanup task cancelled.")
             break

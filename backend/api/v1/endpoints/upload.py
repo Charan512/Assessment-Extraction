@@ -28,15 +28,16 @@ async def upload_question_paper(
         content = await file.read()
         meta = await file_service.save_question_paper(session_id, content, file.filename)
 
-        # Persist file info into the session
+        # Medium fix #10: pass file_paths as nested dict — update_session
+        # handles SessionFilePaths attributes correctly.
         await session_storage.update_session(session_id, {
             "question_paper_filename": meta["filename"],
-            "question_paper_pages": meta["page_count"],
-            "file_paths": (await session_storage.get_session(session_id)).file_paths,
+            "question_paper_pages":    meta["page_count"],
+            "file_paths": {
+                "question_paper_pages_dir": meta["pages_dir"],
+                "question_paper_original":  meta["original_path"],
+            },
         })
-        session = await session_storage.get_session(session_id)
-        session.file_paths.question_paper_pages_dir = meta["pages_dir"]
-        session.file_paths.question_paper_original = meta["original_path"]
 
         return FileUploadResponse(
             file_id=meta["file_id"],
@@ -65,12 +66,14 @@ async def upload_answer_sheet(
         content = await file.read()
         meta = await file_service.save_answer_sheet(session_id, content, file.filename)
 
-        session = await session_storage.get_session(session_id)
-        session.file_paths.answer_sheet_pages_dir = meta["pages_dir"]
-        session.file_paths.answer_sheet_original = meta["original_path"]
+        # Medium fix #10: all state via update_session, not direct mutation
         await session_storage.update_session(session_id, {
             "answer_sheet_filename": meta["filename"],
-            "answer_sheet_pages": meta["page_count"],
+            "answer_sheet_pages":    meta["page_count"],
+            "file_paths": {
+                "answer_sheet_pages_dir": meta["pages_dir"],
+                "answer_sheet_original":  meta["original_path"],
+            },
         })
 
         return FileUploadResponse(

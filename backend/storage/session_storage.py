@@ -71,9 +71,13 @@ class SessionStorage:
     async def update_session(self, session_id: str, updates: dict[str, Any]) -> Session:
         """
         Apply a dict of field updates to a session.
+        Supports nested 'file_paths' dict to update SessionFilePaths attributes.
 
         Example:
-            await storage.update_session(sid, {"status": SessionStatus.COMPLETE})
+            await storage.update_session(sid, {
+                "status": SessionStatus.COMPLETE,
+                "file_paths": {"question_paper_pages_dir": some_path},
+            })
         """
         async with self._lock:
             session = self._store.get(session_id)
@@ -81,7 +85,16 @@ class SessionStorage:
                 raise SessionNotFoundError(session_id)
 
             for key, value in updates.items():
-                if hasattr(session, key):
+                if key == "file_paths" and isinstance(value, dict):
+                    # Apply nested updates to the SessionFilePaths object
+                    for fp_key, fp_val in value.items():
+                        if hasattr(session.file_paths, fp_key):
+                            setattr(session.file_paths, fp_key, fp_val)
+                        else:
+                            logger.warning(
+                                "update_session: unknown file_paths field '%s'", fp_key
+                            )
+                elif hasattr(session, key):
                     setattr(session, key, value)
                 else:
                     logger.warning(
