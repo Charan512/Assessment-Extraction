@@ -77,7 +77,11 @@ export default function ExtractPage() {
           method: "POST",
           timeoutMs: 600_000, // 10 min max for large papers
         }).catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Question extraction failed");
+          if (!cancelled) {
+             const msg = err instanceof Error ? err.message : "Question extraction failed";
+             // Safari's generic CORS/network error
+             setError(msg === "Load failed" ? "Network error: The backend may be down or restarting." : msg);
+          }
         });
       }
     };
@@ -90,7 +94,10 @@ export default function ExtractPage() {
           method: "POST",
           timeoutMs: 600_000,
         }).catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Answer extraction failed");
+          if (!cancelled) {
+             const msg = err instanceof Error ? err.message : "Answer extraction failed";
+             setError(msg === "Load failed" ? "Network error: The backend may be down or restarting." : msg);
+          }
         });
       }
     };
@@ -129,8 +136,13 @@ export default function ExtractPage() {
           setCurrentStep("Complete! Redirecting…");
           setTimeout(() => router.push("/mapping"), 1200);
         }
-      } catch {
-        // Transient poll failure — keep trying
+      } catch (err) {
+        // If the session was lost (e.g. backend restarted), stop polling and show error
+        if (err instanceof Error && (err.message.includes("not found") || err.message.includes("expired"))) {
+          clearInterval(pollRef.current!);
+          setError("Your session has expired or was lost (the server may have restarted). Please start over.");
+        }
+        // Otherwise assume transient poll failure and keep trying
       }
     }, 2000);
 
