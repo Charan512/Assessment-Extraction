@@ -22,8 +22,8 @@ COPY . .
 # Create a directory for sessions
 RUN mkdir -p sessions && chmod 777 sessions
 
-# Expose port 7860 (Hugging Face Spaces default)
-EXPOSE 7860
+# Expose port 8000 by default
+EXPOSE 8000
 
-# Command to run the FastAPI application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Command to run the FastAPI application, using the PORT environment variable provided by Render
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
