@@ -6,6 +6,7 @@ from storage.session_storage import SessionStorage
 from services.extraction_service import ExtractionService
 from models.schemas import QuestionResponse, AnswerResponse, ExtractionStatusResponse
 from models.enums import SessionStatus
+from core.exceptions import SessionNotFoundError
 
 router = APIRouter()
 
@@ -47,6 +48,8 @@ async def extract_questions(
 
         return [QuestionResponse(**q.to_dict(), has_sub_parts=bool(q.sub_parts)) for q in questions]
 
+    except SessionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -95,6 +98,8 @@ async def extract_answers(
 
         return [AnswerResponse(**a.to_dict()) for a in answers]
 
+    except SessionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -121,5 +126,5 @@ async def get_extraction_status(
             answers_found=len(session.answers),
             error_message=session.error_message,
         )
-    except ValueError as e:
+    except SessionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
