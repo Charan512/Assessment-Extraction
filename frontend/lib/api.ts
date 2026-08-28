@@ -5,6 +5,9 @@
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Default timeout for all API calls (5 minutes — OCR can be slow)
+const DEFAULT_TIMEOUT_MS = 300_000;
+
 // ─── Endpoint map ────────────────────────────────────────────────────────────
 
 export const API = {
@@ -137,45 +140,96 @@ export interface GradingSummaryResponse {
   results: GradingResultResponse[];
 }
 
-export interface GradingDataResponse {
-  session_id: string;
-  results: GradingResultResponse[];
-  summary: {
-    total_marks_awarded: number;
-    total_marks_possible: number;
-    percentage: number;
-    grade: string;
-    statistics: {
-      correct: number;
-      partial: number;
-      incorrect: number;
-      unanswered: number;
-      total_questions: number;
-    };
-  };
-}
+// Union type used by /data/grading — backend may return {message} if not graded yet
+export type GradingDataResponse =
+  | {
+      session_id: string;
+      results: GradingResultResponse[];
+      summary: {
+        total_marks_awarded: number;
+        total_marks_possible: number;
+        percentage: number;
+        grade: string;
+        statistics: {
+          correct: number;
+          partial: number;
+          incorrect: number;
+          unanswered: number;
+          total_questions: number;
+        };
+      };
+    }
+  | { message: string };
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
 
-export async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `API Error: ${res.status}`);
+/**
+ * Typed fetch with:
+ * - Configurable timeout (default 5 minutes for slow OCR)
+ * - Proper error extraction from FastAPI {detail: ...} shape
+ * - Safe JSON parsing (handles 204 No Content / empty bodies)
+ */
+export async function apiFetch<T>(
+  url: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
+
+  // AbortController for timeout
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json", ...fetchOptions.headers },
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `API Error: ${res.status}`);
+    }
+
+    // Handle 204 No Content or empty body gracefully
+    const text = await res.text();
+    if (!text) return undefined as unknown as T;
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`Invalid JSON response from server`);
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out. The server is taking too long — please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 export async function apiUpload<T>(url: string, file: File, fieldName = "file"): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file);
-  const res = await fetch(url, { method: "POST", body: formData });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `Upload Error: ${res.status}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { method: "POST", body: formData, signal: controller.signal });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || `Upload Error: ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Upload timed out. Please check your connection and try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }

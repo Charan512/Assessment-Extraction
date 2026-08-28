@@ -6,6 +6,9 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import { Check, Minus, X, HelpCircle, ChevronUp, ChevronDown, Loader2, AlertCircle } from "lucide-react";
 import { API, apiFetch, GradingDataResponse, GradingResultResponse } from "@/lib/api";
+
+// The successful branch of the union — guaranteed to have summary + results
+type GradingSuccessData = Extract<GradingDataResponse, { session_id: string }>;
 import { getSession } from "@/lib/session";
 
 function EvalBadge({ eval: ev }: { eval: string }) {
@@ -30,7 +33,7 @@ function EvalBadge({ eval: ev }: { eval: string }) {
 export default function ResultsPage() {
   const router = useRouter();
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [data, setData] = useState<GradingDataResponse | null>(null);
+  const [data, setData] = useState<GradingSuccessData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,10 +47,11 @@ export default function ResultsPage() {
 
     apiFetch<GradingDataResponse>(API.data.grading(sessionId))
       .then((res) => {
+        // Proper narrowing of the union type
         if ("message" in res) {
           setError("Grading has not been performed yet for this session.");
         } else {
-          setData(res);
+          setData(res as GradingSuccessData);
         }
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load results"))

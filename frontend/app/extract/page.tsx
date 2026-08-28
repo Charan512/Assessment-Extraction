@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
+import Sidebar from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
 import { API, apiFetch, ExtractionStatusResponse } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
@@ -42,12 +44,14 @@ export default function ExtractPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track which extraction phases have been kicked off
+  const kickedRef = useRef({ questions: false, answers: false });
 
   const steps: Step[] = [
-    { label: "Upload received",         done: progress >= 10, active: progress < 10 },
-    { label: "Extracting questions",    done: progress >= 50, active: progress >= 10 && progress < 50 },
-    { label: "Extracting answers",      done: progress >= 100, active: progress >= 50 && progress < 100 },
-    { label: "Matching & ready",        done: done, active: progress >= 100 && !done },
+    { label: "Upload received",      done: progress >= 10,  active: progress < 10 },
+    { label: "Extracting questions", done: progress >= 50,  active: progress >= 10 && progress < 50 },
+    { label: "Extracting answers",   done: progress >= 100, active: progress >= 50 && progress < 100 },
+    { label: "Matching & ready",     done: done,            active: progress >= 100 && !done },
   ];
 
   useEffect(() => {
@@ -59,154 +63,173 @@ export default function ExtractPage() {
 
     let cancelled = false;
 
-    const startExtraction = async () => {
-      try {
-        // Step 1: Extract questions
+    /**
+     * Critical fix: Fire extraction calls WITHOUT awaiting them here.
+     * They run in the background on the server; we poll status every 2s
+     * to get real progress updates instead of a frozen UI.
+     */
+    const kickOffExtractions = () => {
+      if (!kickedRef.current.questions) {
+        kickedRef.current.questions = true;
         setCurrentStep("Extracting questions…");
         setProgress(10);
-        await apiFetch(`${API.extraction.questions}?session_id=${sessionId}`, { method: "POST" });
-
-        if (cancelled) return;
-
-        // Step 2: Extract answers
-        setCurrentStep("Extracting handwritten answers…");
-        setProgress(55);
-        await apiFetch(`${API.extraction.answers}?session_id=${sessionId}`, { method: "POST" });
-
-        if (cancelled) return;
-
-        // Poll until status says complete
-        pollRef.current = setInterval(async () => {
-          if (cancelled) return;
-          try {
-            const status = await apiFetch<ExtractionStatusResponse>(
-              API.extraction.status(sessionId)
-            );
-            setProgress(status.progress);
-            setCurrentStep(status.extraction_step);
-            setQuestionsFound(status.questions_found);
-            setAnswersFound(status.answers_found);
-
-            if (status.error_message) {
-              clearInterval(pollRef.current!);
-              setError(status.error_message);
-              return;
-            }
-
-            if (status.progress >= 100) {
-              clearInterval(pollRef.current!);
-              setDone(true);
-              setCurrentStep("Complete! Redirecting…");
-              setTimeout(() => router.push("/mapping"), 1000);
-            }
-          } catch {
-            // keep polling
-          }
-        }, 1500);
-
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Extraction failed");
-        }
+        apiFetch(`${API.extraction.questions}?session_id=${sessionId}`, {
+          method: "POST",
+          timeoutMs: 600_000, // 10 min max for large papers
+        }).catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Question extraction failed");
+        });
       }
     };
 
-    startExtraction();
+    const kickOffAnswers = () => {
+      if (!kickedRef.current.answers) {
+        kickedRef.current.answers = true;
+        setCurrentStep("Extracting handwritten answers…");
+        apiFetch(`${API.extraction.answers}?session_id=${sessionId}`, {
+          method: "POST",
+          timeoutMs: 600_000,
+        }).catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Answer extraction failed");
+        });
+      }
+    };
+
+    // Fire question extraction immediately
+    kickOffExtractions();
+
+    // Poll status every 2 seconds for real progress
+    pollRef.current = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const status = await apiFetch<ExtractionStatusResponse>(
+          API.extraction.status(sessionId),
+          { timeoutMs: 10_000 }
+        );
+
+        setProgress(status.progress);
+        setCurrentStep(status.extraction_step);
+        setQuestionsFound(status.questions_found);
+        setAnswersFound(status.answers_found);
+
+        if (status.error_message) {
+          clearInterval(pollRef.current!);
+          setError(status.error_message);
+          return;
+        }
+
+        // Once questions are done (≥50%), kick off answer extraction
+        if (status.progress >= 50) {
+          kickOffAnswers();
+        }
+
+        if (status.progress >= 100) {
+          clearInterval(pollRef.current!);
+          setDone(true);
+          setCurrentStep("Complete! Redirecting…");
+          setTimeout(() => router.push("/mapping"), 1200);
+        }
+      } catch {
+        // Transient poll failure — keep trying
+      }
+    }, 2000);
 
     return () => {
       cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      backgroundColor: "#FFFFFF",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 0,
-      padding: 40,
-    }}>
-      <SparkleIcon pulse={!error && !done} />
+    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#F0F0F0" }}>
+      <Sidebar />
+      <div style={{ marginLeft: 260, flex: 1, display: "flex", flexDirection: "column" }}>
+        <TopBar backLabel="Exams" />
 
-      {error ? (
-        <>
-          <AlertCircle size={40} color="#EF4444" style={{ marginTop: 20 }} />
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: "#EF4444", margin: "12px 0 8px" }}>Extraction Failed</h2>
-          <p style={{ fontSize: 14, color: "#6B7280", maxWidth: 400, textAlign: "center" }}>{error}</p>
-          <button
-            onClick={() => router.push("/")}
-            style={{
-              marginTop: 20, padding: "12px 28px",
-              backgroundColor: "#1A1A1A", color: "#fff",
-              border: "none", borderRadius: 50, cursor: "pointer",
-              fontSize: 14, fontWeight: 600,
-            }}
-          >
-            ← Start Over
-          </button>
-        </>
-      ) : (
-        <>
-          <h2 style={{ fontSize: 34, fontWeight: 800, color: "#1A1A1A", margin: "20px 0 0 0", letterSpacing: "-0.5px" }}>
-            {done ? "Done!" : "Extracting…"}
-          </h2>
-          <p style={{ fontSize: 15, color: "#9CA3AF", marginTop: 10, marginBottom: 28 }}>
-            {currentStep}
-          </p>
+        <main style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: 40, gap: 0,
+        }}>
+          <SparkleIcon pulse={!error && !done} />
 
-          {/* Progress bar */}
-          <div style={{ width: 320, height: 6, backgroundColor: "#F3F4F6", borderRadius: 99, marginBottom: 24, overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 99,
-              backgroundColor: "#E85D26",
-              width: `${progress}%`,
-              transition: "width 0.5s ease",
-            }} />
-          </div>
+          {error ? (
+            <>
+              <AlertCircle size={40} color="#EF4444" style={{ marginTop: 20 }} />
+              <h2 style={{ fontSize: 24, fontWeight: 700, color: "#EF4444", margin: "12px 0 8px" }}>Extraction Failed</h2>
+              <p style={{ fontSize: 14, color: "#6B7280", maxWidth: 400, textAlign: "center" }}>{error}</p>
+              <button
+                onClick={() => router.push("/")}
+                style={{
+                  marginTop: 20, padding: "12px 28px",
+                  backgroundColor: "#1A1A1A", color: "#fff",
+                  border: "none", borderRadius: 50, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600,
+                }}
+              >
+                ← Start Over
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 style={{ fontSize: 34, fontWeight: 800, color: "#1A1A1A", margin: "20px 0 0 0", letterSpacing: "-0.5px" }}>
+                {done ? "Done!" : "Extracting…"}
+              </h2>
+              <p style={{ fontSize: 15, color: "#9CA3AF", marginTop: 10, marginBottom: 28 }}>
+                {currentStep}
+              </p>
 
-          {/* Steps */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 320 }}>
-            {steps.map((s, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Progress bar */}
+              <div style={{ width: 320, height: 6, backgroundColor: "#F3F4F6", borderRadius: 99, marginBottom: 24, overflow: "hidden" }}>
                 <div style={{
-                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                  backgroundColor: s.done ? "#E85D26" : s.active ? "#FDE8DF" : "#F3F4F6",
-                  border: `2px solid ${s.done ? "#E85D26" : s.active ? "#E85D26" : "#E5E5E5"}`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {s.done && <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#fff" }} />}
-                  {s.active && <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#E85D26", animation: "pulse 1s infinite" }} />}
-                </div>
-                <span style={{ fontSize: 13, color: s.done ? "#1A1A1A" : s.active ? "#E85D26" : "#9CA3AF", fontWeight: s.active ? 600 : 400 }}>
-                  {s.label}
-                </span>
+                  height: "100%", borderRadius: 99,
+                  backgroundColor: "#E85D26",
+                  width: `${progress}%`,
+                  transition: "width 0.6s ease",
+                }} />
               </div>
-            ))}
-          </div>
 
-          {(questionsFound > 0 || answersFound > 0) && (
-            <div style={{ marginTop: 24, display: "flex", gap: 24 }}>
-              {questionsFound > 0 && (
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: "#E85D26" }}>{questionsFound}</div>
-                  <div style={{ fontSize: 12, color: "#9CA3AF" }}>Questions found</div>
+              {/* Steps */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 320 }}>
+                {steps.map((s, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                      backgroundColor: s.done ? "#E85D26" : s.active ? "#FDE8DF" : "#F3F4F6",
+                      border: `2px solid ${s.done ? "#E85D26" : s.active ? "#E85D26" : "#E5E5E5"}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {s.done && <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#fff" }} />}
+                      {s.active && <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#E85D26", animation: "pulse 1s infinite" }} />}
+                    </div>
+                    <span style={{ fontSize: 13, color: s.done ? "#1A1A1A" : s.active ? "#E85D26" : "#9CA3AF", fontWeight: s.active ? 600 : 400 }}>
+                      {s.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {(questionsFound > 0 || answersFound > 0) && (
+                <div style={{ marginTop: 24, display: "flex", gap: 24 }}>
+                  {questionsFound > 0 && (
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: "#E85D26" }}>{questionsFound}</div>
+                      <div style={{ fontSize: 12, color: "#9CA3AF" }}>Questions found</div>
+                    </div>
+                  )}
+                  {answersFound > 0 && (
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A1A" }}>{answersFound}</div>
+                      <div style={{ fontSize: 12, color: "#9CA3AF" }}>Answers found</div>
+                    </div>
+                  )}
                 </div>
               )}
-              {answersFound > 0 && (
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A1A" }}>{answersFound}</div>
-                  <div style={{ fontSize: 12, color: "#9CA3AF" }}>Answers found</div>
-                </div>
-              )}
-            </div>
+            </>
           )}
-        </>
-      )}
-
+        </main>
+      </div>
       <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
     </div>
   );

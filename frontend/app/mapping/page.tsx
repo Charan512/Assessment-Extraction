@@ -4,18 +4,46 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, ArrowRight, Loader2, AlertCircle, Sun, Wind, Droplets, Leaf } from "lucide-react";
+import {
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  Minus, Plus, ArrowRight, Loader2, AlertCircle, X,
+  Sun, Wind, Droplets, Leaf,
+} from "lucide-react";
 import { API, apiFetch, QuestionResponse, AnswerResponse, MappingResponse } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
-function MarksTag({ awarded, total }: { awarded: number; total: number }) {
-  const text = `${awarded}/${total}`;
-  const color = awarded === total ? "#E85D26" : awarded === 0 ? "#EF4444" : "#F59E0B";
+const ANSWERS_PER_PAGE = 3;
+
+// Shows total available marks for a question (not awarded — grading hasn't run yet)
+function MarksLabel({ total }: { total: number }) {
+  if (!total) return null;
   return (
     <span style={{
-      backgroundColor: `${color}15`, color,
-      borderRadius: 6, padding: "2px 8px", fontSize: 13, fontWeight: 700,
-    }}>{text}</span>
+      backgroundColor: "#F3F4F6", color: "#6B7280",
+      borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 600,
+    }}>
+      {total} mk
+    </span>
+  );
+}
+
+// Inline toast for non-fatal errors
+function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div style={{
+      position: "fixed", bottom: 96, left: "50%", transform: "translateX(-50%)",
+      backgroundColor: "#1A1A1A", color: "#fff",
+      borderRadius: 12, padding: "12px 20px",
+      display: "flex", alignItems: "center", gap: 12,
+      fontSize: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+      zIndex: 50, maxWidth: 420,
+    }}>
+      <AlertCircle size={16} color="#EF4444" />
+      <span style={{ flex: 1 }}>{message}</span>
+      <button onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", display: "flex", alignItems: "center" }}>
+        <X size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -26,17 +54,19 @@ export default function MappingPage() {
   const [answers, setAnswers] = useState<AnswerResponse[]>([]);
   const [mappings, setMappings] = useState<MappingResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [gradingError, setGradingError] = useState<string | null>(null);
   const [grading, setGrading] = useState(false);
 
   const [activeQ, setActiveQ] = useState(0);
   const [expandAll, setExpandAll] = useState(false);
   const [page, setPage] = useState(1);
+  const [zoom, setZoom] = useState(100);
 
   useEffect(() => {
     const sessionId = getSession();
     if (!sessionId) {
-      setError("No session found. Please upload files first.");
+      setLoadError("No session found. Please upload files first.");
       setLoading(false);
       return;
     }
@@ -47,6 +77,14 @@ export default function MappingPage() {
           apiFetch<QuestionResponse[]>(API.data.questions(sessionId)),
           apiFetch<AnswerResponse[]>(API.data.answers(sessionId)),
         ]);
+
+        // Guard: must have data from extraction step
+        if (qs.length === 0) {
+          setLoadError("No questions found. Please complete the extraction step first.");
+          setLoading(false);
+          return;
+        }
+
         setQuestions(qs);
         setAnswers(ans);
 
@@ -57,7 +95,7 @@ export default function MappingPage() {
         );
         setMappings(mapResult.mappings);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
+        setLoadError(err instanceof Error ? err.message : "Failed to load data");
       } finally {
         setLoading(false);
       }
@@ -76,16 +114,21 @@ export default function MappingPage() {
     const sessionId = getSession();
     if (!sessionId) return;
     setGrading(true);
+    setGradingError(null);
     try {
       await apiFetch(`${API.grading.evaluate}?session_id=${sessionId}`, { method: "POST" });
       router.push("/results");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Grading failed");
+      // Show inline toast, do NOT replace the entire mapping UI
+      setGradingError(err instanceof Error ? err.message : "Grading failed. Please try again.");
       setGrading(false);
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(answers.length / 3));
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(answers.length / ANSWERS_PER_PAGE));
+  const pagedAnswers = answers.slice((page - 1) * ANSWERS_PER_PAGE, page * ANSWERS_PER_PAGE);
+
   const activeQuestion = questions[activeQ] || null;
   const activeAnswer = activeQuestion ? getMappedAnswer(activeQuestion.id) : null;
 
@@ -101,13 +144,13 @@ export default function MappingPage() {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#F0F0F0" }}>
         <div style={{ textAlign: "center", padding: 40 }}>
           <AlertCircle size={40} color="#EF4444" />
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1A1A1A", margin: "12px 0 8px" }}>Something went wrong</h2>
-          <p style={{ color: "#6B7280", maxWidth: 360, margin: "0 auto 20px" }}>{error}</p>
+          <p style={{ color: "#6B7280", maxWidth: 360, margin: "0 auto 20px" }}>{loadError}</p>
           <button onClick={() => router.push("/")} style={{ padding: "12px 28px", backgroundColor: "#1A1A1A", color: "#fff", border: "none", borderRadius: 50, cursor: "pointer", fontWeight: 600 }}>
             ← Start Over
           </button>
@@ -115,9 +158,6 @@ export default function MappingPage() {
       </div>
     );
   }
-
-  // If no real data yet (e.g. backend returned empty), show placeholder fallback
-  const displayQuestions = questions.length > 0 ? questions : [];
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#F0F0F0" }}>
@@ -131,7 +171,7 @@ export default function MappingPage() {
           <div style={{ width: 480, backgroundColor: "#FFFFFF", borderRight: "1px solid #E5E5E5", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #F3F4F6" }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#1A1A1A" }}>
-                Extracted Questions ({displayQuestions.length})
+                Extracted Questions ({questions.length})
               </span>
               <button
                 onClick={() => setExpandAll(!expandAll)}
@@ -142,17 +182,10 @@ export default function MappingPage() {
             </div>
 
             <div style={{ overflowY: "auto", flex: 1 }}>
-              {displayQuestions.length === 0 && (
-                <div style={{ padding: 32, textAlign: "center", color: "#9CA3AF", fontSize: 14 }}>
-                  No questions extracted yet.
-                </div>
-              )}
-              {displayQuestions.map((q, i) => {
+              {questions.map((q, i) => {
                 const isActive = i === activeQ;
                 const isExpanded = isActive || expandAll;
                 const mappedAnswer = getMappedAnswer(q.id);
-                const awarded = mappedAnswer ? (q.marks || 0) : 0;
-                const total = q.marks || 0;
 
                 return (
                   <div
@@ -177,7 +210,8 @@ export default function MappingPage() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                           <span style={{ fontSize: 13, color: "#1A1A1A", lineHeight: 1.5, flex: 1 }}>{q.text}</span>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                            {total > 0 && <MarksTag awarded={awarded} total={total} />}
+                            {/* Show marks available — NOT awarded (grading hasn't run yet) */}
+                            <MarksLabel total={q.marks || 0} />
                             {isActive ? <ChevronUp size={14} color="#E85D26" /> : <ChevronDown size={14} color="#9CA3AF" />}
                           </div>
                         </div>
@@ -205,24 +239,50 @@ export default function MappingPage() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E5E5" }}>
               <span style={{ fontWeight: 600, fontSize: 14, color: "#1A1A1A" }}>Answer Sheet</span>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                {/* Zoom — now functional */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6B7280" }}>
-                  <button style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}><Minus size={12} /></button>
-                  <span style={{ fontWeight: 600, color: "#1A1A1A" }}>100%</span>
-                  <button style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}><Plus size={12} /></button>
+                  <button
+                    onClick={() => setZoom(z => Math.max(50, z - 10))}
+                    style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span style={{ fontWeight: 600, color: "#1A1A1A", minWidth: 38, textAlign: "center" }}>{zoom}%</span>
+                  <button
+                    onClick={() => setZoom(z => Math.min(200, z + 10))}
+                    style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}
+                  >
+                    <Plus size={12} />
+                  </button>
                 </div>
+                {/* Pagination — now functional */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center" }}><ChevronLeft size={14} /></button>
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    style={{ background: "none", border: "none", cursor: page === 1 ? "not-allowed" : "pointer", color: page === 1 ? "#D1D5DB" : "#6B7280", display: "flex", alignItems: "center" }}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
                   <span style={{ color: "#6B7280" }}>Page {page} of {totalPages}</span>
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center" }}><ChevronRight size={14} /></button>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    style={{ background: "none", border: "none", cursor: page === totalPages ? "not-allowed" : "pointer", color: page === totalPages ? "#D1D5DB" : "#6B7280", display: "flex", alignItems: "center" }}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
               </div>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: 24, backgroundColor: "#E8E8E8", display: "flex", flexDirection: "column", alignItems: "center" }}>
               <div style={{
-                backgroundColor: "#FFFFFF", width: "100%", maxWidth: 680, minHeight: 900,
+                backgroundColor: "#FFFFFF",
+                width: `${zoom}%`, maxWidth: 680, minHeight: 900,
                 borderRadius: 4, padding: "40px 48px",
                 boxShadow: "0 2px 12px rgba(0,0,0,0.12)", fontFamily: "'Georgia', serif", lineHeight: 1.9,
+                transition: "width 0.2s ease",
               }}>
                 <div style={{ fontSize: 14, color: "#1A1A1A" }}>
                   {/* Active answer highlighted */}
@@ -242,17 +302,19 @@ export default function MappingPage() {
                     </div>
                   )}
 
-                  {/* All other answers */}
-                  {answers.filter((a) => a.id !== activeAnswer?.id).map((a, i) => (
-                    <div key={a.id} style={{ border: "1px solid #E5E5E5", borderRadius: 4, padding: "8px 12px", marginBottom: 10, backgroundColor: "transparent" }}>
-                      <strong style={{ color: "#374151", fontSize: 12 }}>
-                        {a.question_label_found ? `Q${a.question_label_found}` : `Answer ${i + 1}`}
-                      </strong>
-                      <p style={{ margin: "4px 0", fontStyle: "italic", color: "#6B7280", fontSize: 13 }}>
-                        {a.text.slice(0, 150)}{a.text.length > 150 ? "…" : ""}
-                      </p>
-                    </div>
-                  ))}
+                  {/* Paginated answers (excluding the active one shown above) */}
+                  {pagedAnswers
+                    .filter((a) => a.id !== activeAnswer?.id)
+                    .map((a, i) => (
+                      <div key={a.id} style={{ border: "1px solid #E5E5E5", borderRadius: 4, padding: "8px 12px", marginBottom: 10, backgroundColor: "transparent" }}>
+                        <strong style={{ color: "#374151", fontSize: 12 }}>
+                          {a.question_label_found ? `Q${a.question_label_found}` : `Answer ${(page - 1) * ANSWERS_PER_PAGE + i + 1}`}
+                        </strong>
+                        <p style={{ margin: "4px 0", fontStyle: "italic", color: "#6B7280", fontSize: 13 }}>
+                          {a.text.slice(0, 150)}{a.text.length > 150 ? "…" : ""}
+                        </p>
+                      </div>
+                    ))}
 
                   {answers.length === 0 && (
                     <div style={{ textAlign: "center", padding: "60px 0", color: "#9CA3AF" }}>
@@ -291,6 +353,12 @@ export default function MappingPage() {
           </button>
         </div>
       </div>
+
+      {/* Inline toast for grading errors — does NOT replace the page */}
+      {gradingError && (
+        <ErrorToast message={gradingError} onDismiss={() => setGradingError(null)} />
+      )}
+
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );

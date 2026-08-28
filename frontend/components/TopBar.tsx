@@ -1,12 +1,24 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ArrowLeft, ClipboardList, HelpCircle, Bell, Sparkles, User, ChevronDown } from "lucide-react";
 
 interface TopBarProps {
   backLabel?: string;
+  backHref?: string;
 }
 
-export default function TopBar({ backLabel = "Exams" }: TopBarProps) {
+export default function TopBar({ backLabel = "Exams", backHref }: TopBarProps) {
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (backHref) {
+      router.push(backHref);
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <header style={{
       height: 60, display: "flex", alignItems: "center",
@@ -16,7 +28,11 @@ export default function TopBar({ backLabel = "Exams" }: TopBarProps) {
       position: "sticky", top: 0, zIndex: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6B7280", fontSize: 14 }}>
-        <button style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center" }}>
+        <button
+          onClick={handleBack}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", display: "flex", alignItems: "center" }}
+          title={`Back to ${backLabel}`}
+        >
           <ArrowLeft size={18} />
         </button>
         <ClipboardList size={16} color="#6B7280" />
@@ -46,7 +62,7 @@ export default function TopBar({ backLabel = "Exams" }: TopBarProps) {
           }}>
             <User size={16} color="#6B7280" />
           </div>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>Madhur Rastogi</span>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>Teacher</span>
           <ChevronDown size={14} color="#6B7280" />
         </div>
       </div>

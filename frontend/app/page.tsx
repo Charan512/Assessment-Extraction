@@ -110,7 +110,7 @@ function UploadCard({
           <div style={{ fontSize: 14, fontWeight: 600, color: "#1A1A1A" }}>
             Upload <span style={{ color: accent ? "#E85D26" : "#1A1A1A" }}>{label}</span>
           </div>
-          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>PDF / JPG / PNG · Max 10MB</div>
+          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>PDF / JPG / PNG · Max 50MB</div>
         </>
       )}
 
@@ -151,7 +151,11 @@ export default function UploadPage() {
   }, []);
 
   const handleUpload = useCallback(async (file: File, type: "question" | "answer") => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      const setError = type === "question" ? setQuestionError : setAnswerError;
+      setError("Session not ready. Please wait a moment and try again.");
+      return;
+    }
 
     const setFile = type === "question" ? setQuestionFile : setAnswerFile;
     const setState = type === "question" ? setQuestionState : setAnswerState;

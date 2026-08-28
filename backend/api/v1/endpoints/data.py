@@ -4,8 +4,12 @@ from api.dependencies import get_session_storage, get_grading_service
 from storage.session_storage import SessionStorage
 from services.grading_service import GradingEvaluator
 from models.schemas import QuestionResponse, AnswerResponse, MappingResponse
+from core.exceptions import SessionNotFoundError, SessionExpiredError
 
 router = APIRouter()
+
+# Convenience alias so every endpoint can DRY-catch the same exceptions
+_SESSION_ERRORS = (SessionNotFoundError, SessionExpiredError)
 
 
 @router.get("/questions/{session_id}", response_model=List[QuestionResponse])
@@ -17,7 +21,7 @@ async def get_questions(
     try:
         session = await session_storage.get_session(session_id)
         return [QuestionResponse(**q.to_dict(), has_sub_parts=bool(q.sub_parts)) for q in session.questions]
-    except ValueError as e:
+    except _SESSION_ERRORS as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
@@ -30,7 +34,7 @@ async def get_answers(
     try:
         session = await session_storage.get_session(session_id)
         return [AnswerResponse(**a.to_dict()) for a in session.answers]
-    except ValueError as e:
+    except _SESSION_ERRORS as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
@@ -43,7 +47,7 @@ async def get_mappings(
     try:
         session = await session_storage.get_session(session_id)
         return [MappingResponse(**m.to_dict()) for m in session.mappings]
-    except ValueError as e:
+    except _SESSION_ERRORS as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
@@ -80,5 +84,5 @@ async def get_grading_results(
             "results": results,
             "summary": summary,
         }
-    except ValueError as e:
+    except _SESSION_ERRORS as e:
         raise HTTPException(status_code=404, detail=str(e))
