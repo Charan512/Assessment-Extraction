@@ -292,9 +292,6 @@ export default function UploadPage() {
           >
             {isUploading ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</> : <>Start Mapping <ArrowRight size={18} /></>}
           </button>
-          <p style={{ fontSize: 13, color: "#9CA3AF", marginTop: 12 }}>
-            {sessionId ? `Session: ${sessionId.slice(0, 8)}…` : "Initializing session…"}
-          </p>
         </main>
       </div>
     </div>
