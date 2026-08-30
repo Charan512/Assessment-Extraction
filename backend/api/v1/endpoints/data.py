@@ -86,3 +86,28 @@ async def get_grading_results(
         }
     except _SESSION_ERRORS as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+@router.get("/image/{session_id}/{page_number}")
+async def get_answer_sheet_image(
+    session_id: str,
+    page_number: int,
+    session_storage: SessionStorage = Depends(get_session_storage),
+):
+    """Serve the answer sheet image for a specific page."""
+    try:
+        session = await session_storage.get_session(session_id)
+        if not session.file_paths.answer_sheet_pages_dir:
+            raise HTTPException(status_code=404, detail="Answer sheet not found.")
+            
+        # The file is expected to be named page_{page_number}.png
+        image_path = session.file_paths.answer_sheet_pages_dir / f"page_{page_number}.png"
+        
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail=f"Page {page_number} image not found.")
+            
+        return FileResponse(image_path, media_type="image/png")
+    except _SESSION_ERRORS as e:
+        raise HTTPException(status_code=404, detail=str(e))

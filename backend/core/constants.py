@@ -75,4 +75,4 @@ MAX_LINE_HEIGHT_PX = 120
 LINE_PROJECTION_THRESHOLD = 5
 
 # Dilation kernel for merging nearby line components
-LINE_DILATION_KERNEL = (1, 40)  # (height, width)
+LINE_DILATION_KERNEL = (40, 1)  # (width, height)

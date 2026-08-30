@@ -151,18 +151,31 @@ export default function UploadPage() {
   }, []);
 
   const handleUpload = useCallback(async (file: File, type: "question" | "answer") => {
-    if (!sessionId) {
-      const setError = type === "question" ? setQuestionError : setAnswerError;
-      setError("Session not ready. Please wait a moment and try again.");
-      return;
-    }
-
-    const setFile = type === "question" ? setQuestionFile : setAnswerFile;
     const setState = type === "question" ? setQuestionState : setAnswerState;
     const setError = type === "question" ? setQuestionError : setAnswerError;
+    const setFile = type === "question" ? setQuestionFile : setAnswerFile;
+    
+    let activeSessionId = sessionId;
+
+    // If session is null (e.g., backend was restarting on mount), try creating one on the fly
+    if (!activeSessionId) {
+      try {
+        setState("uploading");
+        const res = await apiFetch<SessionCreateResponse>(API.upload.session, { method: "POST" });
+        activeSessionId = res.session_id;
+        setSessionId(activeSessionId);
+        saveSession(activeSessionId);
+        setSessionError(null);
+      } catch (err: unknown) {
+        setState("error");
+        setError("Backend is unreachable. Please wait a moment and try again.");
+        return;
+      }
+    }
+
     const url = type === "question"
-      ? `${API.upload.questionPaper}?session_id=${sessionId}`
-      : `${API.upload.answerSheet}?session_id=${sessionId}`;
+      ? `${API.upload.questionPaper}?session_id=${activeSessionId}`
+      : `${API.upload.answerSheet}?session_id=${activeSessionId}`;
 
     setState("uploading");
     setError(null);

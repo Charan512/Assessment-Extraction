@@ -63,14 +63,17 @@ class Settings(BaseSettings):
 
     # --- Groq AI ---
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
-    groq_model: str = "openai/gpt-oss-120b"
-
-    # --- Tesseract ---
-    tesseract_path: str = ""  # empty = auto-detect
+    groq_model: str = "llama3-70b-8192"
 
     # --- TrOCR ---
     trocr_model: str = "microsoft/trocr-base-handwritten"
     use_gpu: bool = False
+    # Set DISABLE_TROCR=true on memory-constrained deployments (e.g. Render free tier).
+    # Falls back to Tesseract-only OCR which uses ~50MB instead of ~2GB RAM.
+    disable_trocr: bool = Field(default=False, alias="DISABLE_TROCR")
+
+    # --- Tesseract ---
+    tesseract_path: str = ""  # empty = auto-detect
 
     # --- Logging ---
     log_level: str = "INFO"

@@ -1,18 +1,45 @@
 import asyncio
+from pathlib import Path
 from typing import List
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from api.dependencies import get_session_storage, get_extraction_service
 from storage.session_storage import SessionStorage
 from services.extraction_service import ExtractionService
 from models.schemas import QuestionResponse, AnswerResponse, ExtractionStatusResponse
 from models.enums import SessionStatus
 from core.exceptions import SessionNotFoundError
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
+async def _run_question_extraction_task(
+    session_id: str,
+    page_paths: List[Path],
+    session_storage: SessionStorage,
+    extraction_service: ExtractionService
+):
+    try:
+        async def on_progress(p: float):
+            await session_storage.update_session(session_id, {"extraction_progress": int(p)})
+            
+        questions, elapsed = await extraction_service.extract_questions(page_paths, progress_callback=on_progress)
+
+        await session_storage.update_session(session_id, {
+            "questions": questions,
+            "extraction_progress": 50,
+            "extraction_step": f"Questions extracted ({len(questions)} found)",
+        })
+    except Exception as e:
+        logger.error(f"Background question extraction failed: {e}")
+        await session_storage.update_session(session_id, {
+            "status": SessionStatus.ERROR,
+            "error_message": f"Question extraction failed: {str(e)}",
+        })
 
 @router.post("/questions", response_model=List[QuestionResponse])
 async def extract_questions(
+    background_tasks: BackgroundTasks,
     session_id: str = Query(...),
     session_storage: SessionStorage = Depends(get_session_storage),
     extraction_service: ExtractionService = Depends(get_extraction_service),
@@ -34,19 +61,17 @@ async def extract_questions(
             key=lambda p: int(p.stem.split("_")[1]),
         )
 
-        # High fix #9: run sync OCR in a thread executor — never block the event loop
-        loop = asyncio.get_event_loop()
-        questions, elapsed = await loop.run_in_executor(
-            None, extraction_service.extract_questions, page_paths
+        # Kick off background task
+        background_tasks.add_task(
+            _run_question_extraction_task,
+            session_id,
+            page_paths,
+            session_storage,
+            extraction_service
         )
 
-        await session_storage.update_session(session_id, {
-            "questions": questions,
-            "extraction_progress": 50,
-            "extraction_step": f"Questions extracted ({len(questions)} found)",
-        })
-
-        return [QuestionResponse(**q.to_dict(), has_sub_parts=bool(q.sub_parts)) for q in questions]
+        # Return immediately; frontend relies on polling for status
+        return []
 
     except SessionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -60,8 +85,34 @@ async def extract_questions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _run_answer_extraction_task(
+    session_id: str,
+    page_paths: List[Path],
+    session_storage: SessionStorage,
+    extraction_service: ExtractionService
+):
+    try:
+        async def on_progress(p: float):
+            await session_storage.update_session(session_id, {"extraction_progress": int(p)})
+            
+        answers, elapsed = await extraction_service.extract_answers(page_paths, progress_callback=on_progress)
+
+        await session_storage.update_session(session_id, {
+            "answers": answers,
+            "extraction_progress": 100,
+            "extraction_step": f"Answers extracted ({len(answers)} found)",
+            "status": SessionStatus.COMPLETE,
+        })
+    except Exception as e:
+        logger.error(f"Background answer extraction failed: {e}")
+        await session_storage.update_session(session_id, {
+            "status": SessionStatus.ERROR,
+            "error_message": f"Answer extraction failed: {str(e)}",
+        })
+
 @router.post("/answers", response_model=List[AnswerResponse])
 async def extract_answers(
+    background_tasks: BackgroundTasks,
     session_id: str = Query(...),
     session_storage: SessionStorage = Depends(get_session_storage),
     extraction_service: ExtractionService = Depends(get_extraction_service),
@@ -82,21 +133,17 @@ async def extract_answers(
             session.file_paths.answer_sheet_pages_dir.glob("page_*.png"),
             key=lambda p: int(p.stem.split("_")[1]),
         )
-
-        # High fix #9: run sync OCR in a thread executor
-        loop = asyncio.get_event_loop()
-        answers, elapsed = await loop.run_in_executor(
-            None, extraction_service.extract_answers, page_paths
+        
+        # Kick off background task
+        background_tasks.add_task(
+            _run_answer_extraction_task,
+            session_id,
+            page_paths,
+            session_storage,
+            extraction_service
         )
 
-        await session_storage.update_session(session_id, {
-            "answers": answers,
-            "extraction_progress": 100,
-            "extraction_step": f"Answers extracted ({len(answers)} found)",
-            "status": SessionStatus.COMPLETE,
-        })
-
-        return [AnswerResponse(**a.to_dict()) for a in answers]
+        return []
 
     except SessionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

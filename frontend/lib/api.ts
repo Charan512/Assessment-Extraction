@@ -41,6 +41,7 @@ export const API = {
     answers:   (sid: string) => `${API_BASE_URL}/api/v1/data/answers/${sid}`,
     mappings:  (sid: string) => `${API_BASE_URL}/api/v1/data/mapping/${sid}`,
     grading:   (sid: string) => `${API_BASE_URL}/api/v1/data/grading/${sid}`,
+    image:     (sid: string, page: number) => `${API_BASE_URL}/api/v1/data/image/${sid}/${page}`,
   },
 } as const;
 

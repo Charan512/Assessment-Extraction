@@ -47,6 +47,40 @@ function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => 
   );
 }
 
+function BoundingBoxOverlay({ box, isActive, qNumber, imageNaturalWidth, imageNaturalHeight }: { box: any, isActive: boolean, qNumber?: string, imageNaturalWidth: number, imageNaturalHeight: number }) {
+  if (!imageNaturalWidth || !imageNaturalHeight) return null;
+  
+  // Calculate percentages relative to natural image size
+  const left = (box.x / imageNaturalWidth) * 100;
+  const top = (box.y / imageNaturalHeight) * 100;
+  const width = (box.width / imageNaturalWidth) * 100;
+  const height = (box.height / imageNaturalHeight) * 100;
+
+  return (
+    <div style={{
+      position: "absolute",
+      left: `${left}%`, top: `${top}%`,
+      width: `${width}%`, height: `${height}%`,
+      border: isActive ? "3px solid #22C55E" : "1px solid rgba(34, 197, 94, 0.4)",
+      backgroundColor: isActive ? "rgba(34, 197, 94, 0.15)" : "transparent",
+      pointerEvents: "none",
+      transition: "all 0.2s ease"
+    }}>
+      {isActive && qNumber && (
+        <div style={{
+            position: "absolute", top: -28, left: -3, 
+            backgroundColor: "#22C55E", color: "#fff", 
+            padding: "4px 12px", fontSize: 13, fontWeight: 700, 
+            borderTopLeftRadius: 6, borderTopRightRadius: 6,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+        }}>
+          Q{qNumber}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MappingPage() {
   const router = useRouter();
 
@@ -62,6 +96,7 @@ export default function MappingPage() {
   const [expandAll, setExpandAll] = useState(false);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(100);
+  const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     const sessionId = getSession();
@@ -168,20 +203,21 @@ export default function MappingPage() {
         <div style={{ display: "flex", flex: 1, overflow: "hidden", height: "calc(100vh - 60px)" }}>
 
           {/* LEFT: Questions panel */}
-          <div style={{ width: 480, backgroundColor: "#FFFFFF", borderRight: "1px solid #E5E5E5", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #F3F4F6" }}>
-              <span style={{ fontWeight: 700, fontSize: 14, color: "#1A1A1A" }}>
-                Extracted Questions ({questions.length})
+          <div style={{ width: 480, backgroundColor: "#F9FAFB", borderRight: "1px solid #E5E5E5", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #E5E5E5", backgroundColor: "#FFFFFF" }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "#1A1A1A", display: "inline-block", position: "relative" }}>
+                Extracted Questions (from question paper)
+                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 6, backgroundColor: "#F472B6", opacity: 0.4, zIndex: 0 }}></div>
               </span>
               <button
                 onClick={() => setExpandAll(!expandAll)}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#6B7280", fontWeight: 500 }}
+                style={{ background: "#FFFFFF", border: "1px solid #E5E5E5", borderRadius: 20, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "#1A1A1A", fontWeight: 600, boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}
               >
                 {expandAll ? "Collapse All" : "Expand All"}
               </button>
             </div>
 
-            <div style={{ overflowY: "auto", flex: 1 }}>
+            <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px" }}>
               {questions.map((q, i) => {
                 const isActive = i === activeQ;
                 const isExpanded = isActive || expandAll;
@@ -192,39 +228,42 @@ export default function MappingPage() {
                     key={q.id}
                     onClick={() => setActiveQ(i)}
                     style={{
-                      padding: "14px 20px",
-                      borderBottom: "1px solid #F3F4F6",
+                      padding: "16px",
+                      marginBottom: 12,
+                      borderRadius: 12,
+                      border: isActive ? "2px solid #E85D26" : "1px solid #E5E5E5",
                       cursor: "pointer",
-                      backgroundColor: isActive ? "#FFF7F5" : "transparent",
-                      transition: "background-color 0.15s",
+                      backgroundColor: "#FFFFFF",
+                      transition: "all 0.15s ease",
+                      boxShadow: isActive ? "0 4px 12px rgba(232, 93, 38, 0.1)" : "0 1px 3px rgba(0,0,0,0.05)",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                       <div style={{
                         width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                        backgroundColor: isActive ? "#E85D26" : "#1A1A1A",
+                        backgroundColor: isActive ? "#E85D26" : "#4B5563",
                         color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 12, fontWeight: 700,
+                        fontSize: 13, fontWeight: 700,
                       }}>{q.question_number || i + 1}</div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                          <span style={{ fontSize: 13, color: "#1A1A1A", lineHeight: 1.5, flex: 1 }}>{q.text}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                          <span style={{ fontSize: 13, color: "#1F2937", lineHeight: 1.5, flex: 1, fontWeight: 500 }}>{q.text}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                             {/* Show marks available — NOT awarded (grading hasn't run yet) */}
                             <MarksLabel total={q.marks || 0} />
-                            {isActive ? <ChevronUp size={14} color="#E85D26" /> : <ChevronDown size={14} color="#9CA3AF" />}
+                            {isActive ? <ChevronUp size={16} color="#E85D26" /> : <ChevronDown size={16} color="#9CA3AF" />}
                           </div>
                         </div>
                         {isExpanded && mappedAnswer && (
-                          <div style={{ marginTop: 10, padding: "10px 14px", backgroundColor: "#FFF7F5", border: "1px solid #E85D26", borderRadius: 8 }}>
-                            <div style={{ fontWeight: 700, fontSize: 12, color: "#E85D26", marginBottom: 4 }}>Mapped Answer</div>
-                            <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>
-                              {mappedAnswer.text.slice(0, 200)}{mappedAnswer.text.length > 200 ? "…" : ""}
+                          <div style={{ marginTop: 16, padding: "12px 16px", backgroundColor: "#FFF7F5", border: "1px solid rgba(232, 93, 38, 0.3)", borderRadius: 8 }}>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: "#E85D26", marginBottom: 6 }}>Mapped Answer (OCR Text)</div>
+                            <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6, fontStyle: "italic" }}>
+                              "{mappedAnswer.text.slice(0, 200)}{mappedAnswer.text.length > 200 ? "…" : ""}"
                             </div>
                           </div>
                         )}
                         {isExpanded && !mappedAnswer && (
-                          <div style={{ marginTop: 8, fontSize: 12, color: "#9CA3AF", fontStyle: "italic" }}>No answer mapped for this question.</div>
+                          <div style={{ marginTop: 12, fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>No answer mapped for this question.</div>
                         )}
                       </div>
                     </div>
@@ -235,99 +274,80 @@ export default function MappingPage() {
           </div>
 
           {/* RIGHT: Answer viewer */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E5E5" }}>
-              <span style={{ fontWeight: 600, fontSize: 14, color: "#1A1A1A" }}>Answer Sheet</span>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#1E1E1E" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", backgroundColor: "#2D2D2D", borderBottom: "1px solid #404040", color: "#FFFFFF" }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Answer Sheet</span>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                {/* Zoom — now functional */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6B7280" }}>
+                {/* Zoom */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, backgroundColor: "#404040", padding: "4px", borderRadius: 6 }}>
                   <button
                     onClick={() => setZoom(z => Math.max(50, z - 10))}
-                    style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}
+                    style={{ background: "none", border: "none", color: "#A3A3A3", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
                   >
-                    <Minus size={12} />
+                    <Minus size={14} />
                   </button>
-                  <span style={{ fontWeight: 600, color: "#1A1A1A", minWidth: 38, textAlign: "center" }}>{zoom}%</span>
+                  <span style={{ fontWeight: 600, color: "#FFFFFF", minWidth: 42, textAlign: "center" }}>{zoom}%</span>
                   <button
                     onClick={() => setZoom(z => Math.min(200, z + 10))}
-                    style={{ background: "none", border: "1px solid #E5E5E5", borderRadius: 4, padding: "2px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}
+                    style={{ background: "none", border: "none", color: "#A3A3A3", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
                   >
-                    <Plus size={12} />
+                    <Plus size={14} />
                   </button>
                 </div>
-                {/* Pagination — now functional */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                {/* Pagination */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, backgroundColor: "#404040", padding: "4px 8px", borderRadius: 6 }}>
                   <button
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    style={{ background: "none", border: "none", cursor: page === 1 ? "not-allowed" : "pointer", color: page === 1 ? "#D1D5DB" : "#6B7280", display: "flex", alignItems: "center" }}
+                    style={{ background: "none", border: "none", cursor: page === 1 ? "not-allowed" : "pointer", color: page === 1 ? "#737373" : "#FFFFFF", display: "flex", alignItems: "center" }}
                   >
-                    <ChevronLeft size={14} />
+                    <ChevronLeft size={16} />
                   </button>
-                  <span style={{ color: "#6B7280" }}>Page {page} of {totalPages}</span>
+                  <span style={{ color: "#FFFFFF", fontWeight: 500, minWidth: 80, textAlign: "center" }}>Page {page} of 4</span>
                   <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    style={{ background: "none", border: "none", cursor: page === totalPages ? "not-allowed" : "pointer", color: page === totalPages ? "#D1D5DB" : "#6B7280", display: "flex", alignItems: "center" }}
+                    onClick={() => setPage(p => Math.min(4, p + 1))}
+                    disabled={page === 4}
+                    style={{ background: "none", border: "none", cursor: page === 4 ? "not-allowed" : "pointer", color: page === 4 ? "#737373" : "#FFFFFF", display: "flex", alignItems: "center" }}
                   >
-                    <ChevronRight size={14} />
+                    <ChevronRight size={16} />
                   </button>
                 </div>
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: 24, backgroundColor: "#E8E8E8", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{
+            <div style={{ flex: 1, overflow: "auto", padding: 40, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+              <div style={{ 
+                position: "relative", 
+                transform: `scale(${zoom / 100})`, 
+                transformOrigin: "top center", 
+                transition: "transform 0.2s ease",
                 backgroundColor: "#FFFFFF",
-                width: `${zoom}%`, maxWidth: 680, minHeight: 900,
-                borderRadius: 4, padding: "40px 48px",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.12)", fontFamily: "'Georgia', serif", lineHeight: 1.9,
-                transition: "width 0.2s ease",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)"
               }}>
-                <div style={{ fontSize: 14, color: "#1A1A1A" }}>
-                  {/* Active answer highlighted */}
-                  {activeAnswer && (
-                    <div style={{ border: "2px solid #22C55E", borderRadius: 4, padding: "12px", marginBottom: 16, backgroundColor: "#F0FDF4" }}>
-                      <strong style={{ color: "#059669", fontSize: 12 }}>
-                        ✓ Answer for Q{activeQuestion?.question_number}
-                      </strong>
-                      <p style={{ margin: "8px 0 0", fontStyle: "italic", whiteSpace: "pre-wrap", fontSize: 13 }}>
-                        {activeAnswer.text || "(No text extracted)"}
-                      </p>
-                      {activeAnswer.confidence > 0 && (
-                        <div style={{ fontSize: 11, color: "#6B7280", marginTop: 6 }}>
-                          OCR confidence: {Math.round(activeAnswer.confidence * 100)}%
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Paginated answers (excluding the active one shown above) */}
-                  {pagedAnswers
-                    .filter((a) => a.id !== activeAnswer?.id)
-                    .map((a, i) => (
-                      <div key={a.id} style={{ border: "1px solid #E5E5E5", borderRadius: 4, padding: "8px 12px", marginBottom: 10, backgroundColor: "transparent" }}>
-                        <strong style={{ color: "#374151", fontSize: 12 }}>
-                          {a.question_label_found ? `Q${a.question_label_found}` : `Answer ${(page - 1) * ANSWERS_PER_PAGE + i + 1}`}
-                        </strong>
-                        <p style={{ margin: "4px 0", fontStyle: "italic", color: "#6B7280", fontSize: 13 }}>
-                          {a.text.slice(0, 150)}{a.text.length > 150 ? "…" : ""}
-                        </p>
-                      </div>
-                    ))}
-
-                  {answers.length === 0 && (
-                    <div style={{ textAlign: "center", padding: "60px 0", color: "#9CA3AF" }}>
-                      <div style={{ display: "inline-flex", gap: 24, marginBottom: 16 }}>
-                        <div style={{ textAlign: "center" }}><Sun size={24} color="#F59E0B" /><br/><span style={{ fontSize: 11 }}>Sunlight</span></div>
-                        <div style={{ textAlign: "center" }}><Wind size={24} color="#6B7280" /><br/><span style={{ fontSize: 11 }}>CO₂</span></div>
-                        <div style={{ textAlign: "center" }}><Droplets size={24} color="#3B82F6" /><br/><span style={{ fontSize: 11 }}>Water</span></div>
-                        <div style={{ textAlign: "center" }}><Leaf size={24} color="#22C55E" /><br/><span style={{ fontSize: 11 }}>O₂</span></div>
-                      </div>
-                      <p>No answers extracted yet.</p>
-                    </div>
-                  )}
-                </div>
+                <img 
+                  src={API.data.image(getSession()!, page)} 
+                  alt={`Answer Sheet Page ${page}`}
+                  style={{ display: "block", maxWidth: "100%", height: "auto", width: 800 }}
+                  onLoad={(e) => setImgDims({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
+                  id="answer-sheet-image"
+                />
+                
+                {/* Overlays for bounding boxes */}
+                {answers.filter(a => a.page_numbers.includes(page)).map(a => {
+                  const boxes = a.bounding_boxes.filter(b => b.page_number === page);
+                  const isMappedToActive = a.id === activeAnswer?.id;
+                  
+                  return boxes.map((box, i) => (
+                    <BoundingBoxOverlay 
+                      key={`${a.id}-${i}`} 
+                      box={box} 
+                      isActive={isMappedToActive} 
+                      qNumber={activeQuestion?.question_number}
+                      imageNaturalWidth={imgDims.width}
+                      imageNaturalHeight={imgDims.height}
+                    />
+                  ));
+                })}
               </div>
             </div>
           </div>

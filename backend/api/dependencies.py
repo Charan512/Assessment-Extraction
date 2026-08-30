@@ -5,12 +5,19 @@ from services.extraction_service import ExtractionService
 from services.mapping_service import MappingService
 from services.grading_service import GradingEvaluator
 
+from groq import AsyncGroq
+from config import get_settings
+
+# Initialize settings and Groq client
+settings = get_settings()
+groq_client = AsyncGroq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+
 # Initialize services as singletons (could be moved to app state)
 session_storage = SessionStorage()
 ocr_service = OCRService()
 file_service = FileService()
-extraction_service = ExtractionService(ocr_service)
-mapping_service = MappingService()
+extraction_service = ExtractionService(ocr_service, groq_client=groq_client)
+mapping_service = MappingService(groq_client=groq_client)
 grading_evaluator = GradingEvaluator()
 
 def get_session_storage() -> SessionStorage:
